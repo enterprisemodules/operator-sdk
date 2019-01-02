@@ -65,6 +65,7 @@ kubernetes cluster using a kubeconfig file.
 	upLocalCmd.Flags().StringVar(&operatorFlags, "operator-flags", "", "The flags that the operator needs. Example: \"--flag1 value1 --flag2=value2\"")
 	upLocalCmd.Flags().StringVar(&namespace, "namespace", "default", "The namespace where the operator watches for changes.")
 	upLocalCmd.Flags().StringVar(&ldFlags, "go-ldflags", "", "Set Go linker options")
+	upLocalCmd.Flags().BoolVar(&debugFlag, "debug", false, "Debug using dlv")
 	if projutil.GetOperatorType() == projutil.OperatorTypeAnsible {
 		ansibleOperatorFlags = flags.AddTo(upLocalCmd.Flags(), "(ansible operator)")
 	}
@@ -76,6 +77,7 @@ var (
 	operatorFlags        string
 	namespace            string
 	ldFlags              string
+	debugFlag            bool
 	ansibleOperatorFlags *flags.AnsibleOperatorFlags
 )
 
@@ -119,16 +121,25 @@ func mustKubeConfig() {
 }
 
 func upLocal() {
-	args := []string{"run"}
-	if ldFlags != "" {
-		args = append(args, []string{"-ldflags", ldFlags}...)
+	var args []string
+	var cmd string
+
+	if debugFlag {
+		cmd = "dlv"
+		args = []string{"debug"}
+	} else {
+		cmd = "go"
+		args = []string{"run"}
+		if ldFlags != "" {
+			args = append(args, []string{"-ldflags", ldFlags}...)
+		}
 	}
 	args = append(args, filepath.Join(scaffold.ManagerDir, scaffold.CmdFile))
 	if operatorFlags != "" {
 		extraArgs := strings.Split(operatorFlags, " ")
 		args = append(args, extraArgs...)
 	}
-	dc := exec.Command("go", args...)
+	dc := exec.Command(cmd, args...)
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -139,6 +150,9 @@ func upLocal() {
 		}
 		os.Exit(0)
 	}()
+	if debugFlag {
+		dc.Stdin = os.Stdin
+	}
 	dc.Stdout = os.Stdout
 	dc.Stderr = os.Stderr
 	dc.Env = append(os.Environ(), fmt.Sprintf("%v=%v", k8sutil.KubeConfigEnvVar, kubeConfig))

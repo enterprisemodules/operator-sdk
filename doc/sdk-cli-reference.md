@@ -348,6 +348,8 @@ kubernetes cluster using a kubeconfig file.
 
 * `-h, --help` - help for local
 
+* `--debug` bool - Run the operator in `dlv` for debugging purposes
+
 ##### Example
 
 ```bash
@@ -362,6 +364,13 @@ To use the operator flags, your operator must know how to handle the option. Bel
 ```bash
 operator-sdk up local --operator-flags "--resync-interval 10"
 ```
+
+Running controller in the `dlv` debugger.
+
+```bash
+operator-sdk up local --debug
+```
+
 
 If you are planning on using a different namespace than the default, then you should use the `--namespace` flag to change where the operator is watching for custom resources to be created.
 For this to work your operator must handle the `WATCH_NAMESPACE` environment variable. To do that you can use the [utility function][utility_link] `k8sutil.GetWatchNamespace` in your operator.
