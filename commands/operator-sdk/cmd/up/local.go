@@ -96,6 +96,8 @@ func upLocalFunc(cmd *cobra.Command, args []string) {
 		upLocalAnsible()
 	case projutil.OperatorTypeHelm:
 		upLocalHelm()
+	case projutil.OperatorTypePuppet:
+		upLocalPuppet()
 	default:
 		log.Fatal("failed to determine operator type")
 	}
@@ -190,6 +192,57 @@ func upLocalAnsible() {
 }
 
 func upLocalHelm() {
+	// Set the kubeconfig that the manager will be able to grab
+	if err := os.Setenv(k8sutil.KubeConfigEnvVar, kubeConfig); err != nil {
+		log.Fatalf("failed to set %s environment variable: (%v)", k8sutil.KubeConfigEnvVar, err)
+	}
+
+	logf.SetLogger(logf.ZapLogger(false))
+
+	printVersion()
+
+	cfg, err := config.GetConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	mgr, err := manager.New(cfg, manager.Options{Namespace: namespace})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create Tiller's storage backend and kubernetes client
+	storageBackend := storage.Init(driver.NewMemory())
+	tillerKubeClient, err := client.NewFromManager(mgr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	factories, err := release.NewManagerFactoriesFromFile(storageBackend, tillerKubeClient, helmScaffold.WatchesYamlFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for gvk, factory := range factories {
+		// Register the controller with the factory.
+		err := controller.Add(mgr, controller.WatchOptions{
+			Namespace:      namespace,
+			GVK:            gvk,
+			ManagerFactory: factory,
+			ResyncPeriod:   time.Second * 5,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Start the Cmd
+	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func upLocalPuppet() {
 	// Set the kubeconfig that the manager will be able to grab
 	if err := os.Setenv(k8sutil.KubeConfigEnvVar, kubeConfig); err != nil {
 		log.Fatalf("failed to set %s environment variable: (%v)", k8sutil.KubeConfigEnvVar, err)

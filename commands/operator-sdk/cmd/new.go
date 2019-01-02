@@ -51,7 +51,7 @@ generates a skeletal app-operator application in $GOPATH/src/github.com/example.
 
 	newCmd.Flags().StringVar(&apiVersion, "api-version", "", "Kubernetes apiVersion and has a format of $GROUP_NAME/$VERSION (e.g app.example.com/v1alpha1)")
 	newCmd.Flags().StringVar(&kind, "kind", "", "Kubernetes CustomResourceDefintion kind. (e.g AppService)")
-	newCmd.Flags().StringVar(&operatorType, "type", "go", "Type of operator to initialize (e.g \"ansible\")")
+	newCmd.Flags().StringVar(&operatorType, "type", "go", "Type of operator to initialize (e.g \"ansible\", \"puppet\" or \"helm\")")
 	newCmd.Flags().BoolVar(&skipGit, "skip-git-init", false, "Do not init the directory as a git repository")
 	newCmd.Flags().BoolVar(&generatePlaybook, "generate-playbook", false, "Generate a playbook skeleton. (Only used for --type ansible)")
 	newCmd.Flags().BoolVar(&isClusterScoped, "cluster-scoped", false, "Generate cluster-scoped resources instead of namespace-scoped")
@@ -92,6 +92,8 @@ func newFunc(cmd *cobra.Command, args []string) {
 		doAnsibleScaffold()
 	case projutil.OperatorTypeHelm:
 		doHelmScaffold()
+	case projutil.OperatorTypePuppet:
+		doPuppetScaffold()
 	}
 	initGit()
 
@@ -291,9 +293,97 @@ func doHelmScaffold() {
 	}
 }
 
+func doPuppetScaffold() {
+	cfg := &input.Config{
+		AbsProjectPath: filepath.Join(projutil.MustGetwd(), projectName),
+		ProjectName:    projectName,
+	}
+
+	resource, err := scaffold.NewResource(apiVersion, kind)
+	if err != nil {
+		log.Fatalf("invalid apiVersion and kind: (%v)", err)
+	}
+
+	s := &scaffold.Scaffold{}
+	tmpdir, err := ioutil.TempDir("", "osdk")
+	if err != nil {
+		log.Fatalf("unable to get temp directory: (%v)", err)
+	}
+
+	galaxyInit := &ansible.GalaxyInit{
+		Resource: *resource,
+		Dir:      tmpdir,
+	}
+
+	err = s.Execute(cfg,
+		&ansible.Dockerfile{
+			GeneratePlaybook: generatePlaybook,
+		},
+		&ansible.WatchesYAML{
+			Resource:         *resource,
+			GeneratePlaybook: generatePlaybook,
+		},
+		galaxyInit,
+		&scaffold.ServiceAccount{},
+		&scaffold.Role{
+			IsClusterScoped: isClusterScoped,
+		},
+		&scaffold.RoleBinding{
+			IsClusterScoped: isClusterScoped,
+		},
+		&ansible.Operator{
+			IsClusterScoped: isClusterScoped,
+		},
+		&scaffold.Crd{
+			Resource: resource,
+		},
+		&scaffold.Cr{
+			Resource: resource,
+		},
+	)
+	if err != nil {
+		log.Fatalf("new ansible scaffold failed: (%v)", err)
+	}
+
+	// Decide on playbook.
+	if generatePlaybook {
+		log.Infof("Generating %s playbook.", strings.Title(operatorType))
+
+		err := s.Execute(cfg,
+			&ansible.Playbook{
+				Resource: *resource,
+			},
+		)
+		if err != nil {
+			log.Fatalf("new ansible playbook scaffold failed: (%v)", err)
+		}
+	}
+
+	log.Info("Running galaxy-init.")
+
+	// Run galaxy init.
+	cmd := exec.Command(filepath.Join(galaxyInit.AbsProjectPath, galaxyInit.Path))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Run()
+
+	// Delete Galxy INIT
+	// Mac OS tmp directory is /var/folders/_c/..... this means we have to make sure that we get the top level directory to remove
+	// everything.
+	tmpDirectorySlice := strings.Split(os.TempDir(), "/")
+	if err = os.RemoveAll(filepath.Join(galaxyInit.AbsProjectPath, tmpDirectorySlice[1])); err != nil {
+		log.Fatalf("failed to remove the galaxy init script: (%v)", err)
+	}
+
+	// update deploy/role.yaml for the given resource r.
+	if err := scaffold.UpdateRoleForResource(resource, cfg.AbsProjectPath); err != nil {
+		log.Fatalf("failed to update the RBAC manifest for the resource (%v, %v): (%v)", resource.APIVersion, resource.Kind, err)
+	}
+}
+
 func verifyFlags() {
-	if operatorType != projutil.OperatorTypeGo && operatorType != projutil.OperatorTypeAnsible && operatorType != projutil.OperatorTypeHelm {
-		log.Fatal("--type can only be `go`, `ansible`, or `helm`")
+	if operatorType != projutil.OperatorTypeGo && operatorType != projutil.OperatorTypeAnsible && operatorType != projutil.OperatorTypeHelm && operatorType != projutil.OperatorTypePuppet {
+		log.Fatal("--type can only be `go`, `ansible`, `puppet` or `helm`")
 	}
 	if operatorType != projutil.OperatorTypeAnsible && generatePlaybook {
 		log.Fatal("--generate-playbook can only be used with --type `ansible`")

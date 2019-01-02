@@ -46,6 +46,8 @@ const (
 	OperatorTypeAnsible OperatorType = "ansible"
 	// OperatorTypeHelm - helm type of operator.
 	OperatorTypeHelm OperatorType = "helm"
+	// OperatorTypePuppet - puppet type of operator.
+	OperatorTypePuppet OperatorType = "puppet"
 	// OperatorTypeUnknown - unknown type of operator.
 	OperatorTypeUnknown OperatorType = "unknown"
 )

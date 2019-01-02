@@ -44,6 +44,12 @@ The following workflow is for a new **Helm** operator:
 3. Use the SDK CLI to build and generate the operator deployment manifests
 4. Optionally add additional CRD's using the SDK CLI and repeat steps 2 and 3
 
+The following workflow is for a new **Puppet** operator:
+1. Create a new operator project using the SDK Command Line Interface(CLI)
+2. Create a new (or add your existing) Puppet class for use by the operator's reconciling logic
+3. Use the SDK CLI to build and generate the operator deployment manifests
+4. Optionally add additional CRD's using the SDK CLI and repeat steps 2 and 3
+
 ## Prerequisites
 
 - [dep][dep_tool] version v0.5.0+.
